@@ -1,0 +1,364 @@
+---
+title: "Summarizing Student Data"
+format: html
+editor: visual
+---
+
+## Task 1: Read in the Data and Modify
+
+First, we will read in data from the UCI machine learning repository on secondary education in two Portugese schools, available here: <https://archive.ics.uci.edu/dataset/320/student+performance> There are two data sets, and so after we read them in, we will want to combine them into one big data frame We can do this with the following code:
+
+```{r}
+d1 <- read.delim("student/student-mat.csv", sep=";", header = TRUE)
+d2 <- read.delim("student/student-por.csv", sep=";", header = TRUE)
+
+d3 <- merge(d1, d2, by = c("school","sex","age","address","famsize","Pstatus","Medu","Fedu",
+                           "Mjob","Fjob","reason","nursery","internet"))
+d3
+```
+
+Alternatively, we can combine it using `inner_join` from `tidyverse`, which we show below:
+
+```{r}
+library(tidyverse)
+library(dplyr)
+
+math_data <- read.delim("student/student-mat.csv", sep=";", header = TRUE)
+portugese_data <- read.delim("student/student-por.csv", sep=";", header = TRUE)
+
+inner_join(math_data, portugese_data, by = c("school","sex","age","address","famsize","Pstatus","Medu","Fedu",
+                         "Mjob","Fjob","reason","nursery","internet"))
+```
+
+There are other variables from the data; in particular, we will add all other variables and corresponding observations, except "G1", "G2", "G3", "paid", and "absences". The resulting data set will be called `combined_data`.
+
+```{r}
+combined_data <- inner_join(math_data, portugese_data, by = 
+                        c("school", "sex", "age", "address", "famsize", "Pstatus", "Medu", 
+                          "Fedu", "Mjob", "Fjob", "reason", "guardian", "traveltime", 
+                          "studytime", "failures", "schoolsup", "famsup", "activities", 
+                          "nursery", "higher", "internet", "romantic", "famrel", 
+                          "freetime", "goout", "Dalc", "Walc", "health"))
+combined_data
+```
+
+I am interested in the following categorical variables: "sex", address", "famsize", "Pstatus". Each of these variables can be viewed as factors, each with two levels (because there is only 2 possible values that each variable can take). Below we convert them to factors in each of the data frames.
+
+```{r}
+math_data <- math_data |>
+  mutate(sex = as.factor(sex),
+         address = as.factor(address),
+         famsize = as.factor(famsize),
+         Pstatus = as.factor(Pstatus))
+math_data
+
+portugese_data <- portugese_data |>
+  mutate(sex = as.factor(sex),
+         address = as.factor(address),
+         famsize = as.factor(famsize),
+         Pstatus = as.factor(Pstatus))
+portugese_data
+
+combined_data <- combined_data |>
+  mutate(sex = as.factor(sex),
+         address = as.factor(address),
+         famsize = as.factor(famsize),
+         Pstatus = as.factor(Pstatus))
+combined_data
+```
+
+## Task 2: Summarize the Data
+
+### Categorical Variables
+
+Let's create some contingency tables. A one-way contingency table for the "sex" variable is given by:
+
+```{r}
+table(combined_data$sex)
+```
+
+So, from the above table we see that there were 174 females and 146 males surveyed in this study. Next, we consider the two-way contingency table for "sex" and "address" given by:
+
+```{r}
+table(combined_data$sex, combined_data$address)
+```
+
+So, we see from this table that there 35 females from rural addresses were surveyed, 139 females from urban addresses were surveyed, 32 males from rural addresses were surveyed, and 114 males from urban addresses were surveyed. Finally, let's consider a three-way contingency table for "sex", "address", and "Pstatus":
+
+```{r}
+table(combined_data$sex, combined_data$address, combined_data$Pstatus)
+```
+
+The (1,1,1)-entry of this 3D array is 2, and this number signifies that 2 females from rural addresses with parents living apart from each other were surveyed in this study. Another value, say the (2,2,2)-entry, which is 104, signifies that 104 males from urban addresses with parents living together were surveyed in this study.
+
+Next, we will create a conditional two-contingency table for sex and address two different ways. First, we subset the data using the `filter()` function, only considering observations where Pstatus is "A":
+
+```{r}
+combined_data_filtered <- combined_data |>
+  filter(Pstatus == "A")
+
+table(combined_data_filtered$sex, combined_data_filtered$address)
+```
+
+Alternatively, we can create a three-way contingency table with sex, address, and Pstatus, and then subset that to get the conditional two-way contingency table for sex and address:
+
+```{r}
+table(combined_data$sex, combined_data$address, combined_data$Pstatus)[ , , 1]
+```
+
+Now, we will create a two-contingency table for sex and address using the `group_by()`, `summarize()` and `pivot_wider()` functions:
+
+```{r}
+combined_data |>
+  group_by(sex, address) |>
+  summarize(count = n()) |>
+  pivot_wider(names_from = address, values_from = count)
+```
+
+Now, we will create a stacked bar graph and a side-by-side bar graph to visually represent the data from the two-way contingency tables of sex and address.
+
+```{r}
+library(ggplot2)
+
+#stacked bar graph
+ggplot(data = combined_data, aes(x = sex, fill = address)) +
+  geom_bar() + 
+  labs(x = "sex", title = "Stacked Bar Graph")
+```
+
+and
+
+```{r}
+#side-by-side bar graph
+ggplot(data = combined_data, aes(x = sex, fill = address)) +
+  geom_bar(position = "dodge") +
+  labs(x = "sex", title = "Side-By-Side Bar Graph") + 
+  scale_fill_discrete("address")
+```
+
+### Numeric Variables (Across Groups)
+
+The numeric variables are age, absences, and the three test grade variables: G1, G2, G3, from each data set (math and Portugese). First, we will compute measures of center (i.e. mean and median) and spread (i.e. standard deviation and interquartile range) for the variables age, absences, and G3. 
+
+```{r}
+math_statistics_summary <- math_data |>
+  summarize(across(c(age, absences, G3), 
+            list("Mean" = ~ mean(.x, na.rm = TRUE), "Median" = ~ median(.x, na.rm = TRUE),
+                 "Standard Deviation" = ~ sd(.x, na.rm = TRUE), "IQR" = ~ IQR(.x, na.rm = TRUE)),
+            .names = "{.fn}_{.col}"))
+math_statistics_summary
+
+portugese_statistics_summary <- portugese_data |>
+  summarize(across(c(age, absences, G3), 
+            list("Mean" = ~ mean(.x, na.rm = TRUE), "Median" = ~ median(.x, na.rm = TRUE),
+                 "Standard Deviation" = ~ sd(.x, na.rm = TRUE), "IQR" = ~ IQR(.x, na.rm = TRUE)),
+            .names = "{.fn}_{.col}"))
+portugese_statistics_summary
+
+```
+
+Next, for each data set we will group by sex and compute measures of center and spread for the same variables age, absences, and G3. 
+
+```{r}
+math_statistics_by_sex <- math_data |>
+  group_by(sex) |>
+  drop_na(sex) |>
+  summarize(across(c(age, absences, G3), 
+            list("Mean" = ~ mean(.x, na.rm = TRUE), "Median" = ~ median(.x, na.rm = TRUE),
+                 "Standard Deviation" = ~ sd(.x, na.rm = TRUE), "IQR" = ~ IQR(.x, na.rm = TRUE)),
+            .names = "{.fn}_{.col}"))
+math_statistics_by_sex
+
+portugese_statistics_by_sex <- portugese_data |>
+  group_by(sex) |>
+  drop_na(sex) |>
+  summarize(across(c(age, absences, G3), 
+            list("Mean" = ~ mean(.x, na.rm = TRUE), "Median" = ~ median(.x, na.rm = TRUE),
+                 "Standard Deviation" = ~ sd(.x, na.rm = TRUE), "IQR" = ~ IQR(.x, na.rm = TRUE)),
+            .names = "{.fn}_{.col}"))
+portugese_statistics_by_sex
+```
+Now, for each data set, we will group by sex and address and compute measures of center and spread for the same variables age, absences, and G3. 
+
+```{r}
+math_statistics_by_sex_and_address <- math_data |>
+  group_by(sex, address) |>
+  drop_na(sex, address) |>
+  summarize(across(c(age, absences, G3), 
+            list("Mean" = ~ mean(.x, na.rm = TRUE), "Median" = ~ median(.x, na.rm = TRUE),
+                 "Standard Deviation" = ~ sd(.x, na.rm = TRUE), "IQR" = ~ IQR(.x, na.rm = TRUE)),
+            .names = "{.fn}_{.col}"))
+math_statistics_by_sex_and_address
+
+portugese_statistics_by_sex_and_address <- portugese_data |>
+  group_by(sex, address) |>
+  drop_na(sex, address) |>
+  summarize(across(c(age, absences, G3), 
+            list("Mean" = ~ mean(.x, na.rm = TRUE), "Median" = ~ median(.x, na.rm = TRUE),
+                 "Standard Deviation" = ~ sd(.x, na.rm = TRUE), "IQR" = ~ IQR(.x, na.rm = TRUE)),
+            .names = "{.fn}_{.col}"))
+portugese_statistics_by_sex_and_address
+```
+
+Next, below we create correlation matrices between all of the numeric variables, from the math_data data frame. 
+
+```{r}
+age_correlation_math <- math_data |>
+  summarize(across(c(absences, G1, G2, G3), 
+            list("correlation_with" = ~ cor(.x,age)),
+            .names = "age_{.fn}_{.col}")) 
+age_correlation_math
+
+absences_correlation_math <- math_data |>
+  summarize(across(c(age, G1, G2, G3), 
+            list("correlation_with" = ~ cor(.x,absences)),
+            .names = "absences_{.fn}_{.col}")) 
+absences_correlation_math
+
+G1_correlation_math <- math_data |>
+  summarize(across(c(age, absences, G2, G3), 
+            list("correlation_with" = ~ cor(.x,G1)),
+            .names = "G1_{.fn}_{.col}")) 
+G1_correlation_math
+
+G2_correlation_math <- math_data |>
+  summarize(across(c(age, absences, G1, G3), 
+            list("correlation_with" = ~ cor(.x,G2)),
+            .names = "G2_{.fn}_{.col}")) 
+G2_correlation_math
+
+G3_correlation_math <- math_data |>
+  summarize(across(c(age, absences, G1, G2), 
+            list("correlation_with" = ~ cor(.x,G3)),
+            .names = "G3_{.fn}_{.col}")) 
+G3_correlation_math
+```
+
+Next, below we create histograms, kernel density plots, and box plots, each for the absences and G3 numerical variables across the sex variable, from the math_data data frame. 
+
+First, the histograms...
+
+```{r}
+absences_histogram <- ggplot(math_data |> drop_na(absences, sex), aes(x = absences))
+absences_histogram + 
+  geom_histogram(alpha = 0.5, aes(fill = sex))
+```
+
+```{r}
+G3_histogram <- ggplot(math_data |> drop_na(G3, sex), aes(x = G3))
+G3_histogram + 
+  geom_histogram(alpha = 0.5, aes(fill = sex))
+```
+
+Next, the density plots...
+
+```{r}
+absences_densityplot <- ggplot(math_data |> drop_na(absences, sex), aes(x = absences))
+absences_densityplot + 
+  geom_density(alpha = 0.5, aes(fill = sex))
+```
+```{r}
+G3_densityplot <- ggplot(math_data |> drop_na(G3, sex), aes(x = G3))
+G3_densityplot + 
+  geom_density(alpha = 0.5, aes(fill = sex))
+```
+Now the boxplots...
+
+```{r}
+absences_boxplot <- ggplot(math_data |> drop_na(absences, sex), aes(x = sex, y = absences, fill = sex))
+absences_boxplot + geom_boxplot() + 
+  geom_jitter(width = 0.25, alpha = 0.5)
+```
+```{r}
+G3_boxplot <- ggplot(math_data |> drop_na(G3, sex), aes(x = sex, y = G3, fill = sex))
+G3_boxplot + geom_boxplot() + 
+  geom_jitter(width = 0.25, alpha = 0.5)
+```
+Next, we will create two scatter plots relating G3 with to age and absences, differentiating observations by sex according to color. 
+
+First, age...
+
+```{r}
+G3_age_scatterplot <- ggplot(math_data |> drop_na(age, G3, sex), 
+                             aes(x = age, y = G3, color = sex))
+G3_age_scatterplot + geom_point() + 
+  geom_jitter(width = 0.25, alpha = 0.5)
+```
+
+Next, absences...
+
+```{r}
+G3_absences_scatterplot <- ggplot(math_data |> drop_na(absences, G3, sex), 
+                             aes(x = absences, y = G3, color = sex))
+G3_absences_scatterplot + geom_point() +
+  geom_jitter(width = 0.25, alpha = 0.5)
+```
+
+Now, we will use faceting to create scatter plots relating G3 with to age and absences, differentiating observations by sex according to color, at each level of address. 
+
+First, age...
+
+```{r}
+G3_age_scatterplot_with_address <- ggplot(math_data |> drop_na(age, G3, sex), 
+                             aes(x = age, y = G3, color = sex))
+G3_age_scatterplot_with_address + geom_point() + 
+  geom_jitter(width = 0.25, alpha = 0.5) + 
+  facet_wrap(~address)
+```
+
+Next, absences...
+
+```{r}
+G3_absences_scatterplot_with_address <- ggplot(math_data |> drop_na(absences, G3, sex), 
+                             aes(x = absences, y = G3, color = sex))
+G3_absences_scatterplot_with_address + geom_point() +
+  geom_jitter(width = 0.25, alpha = 0.5) +
+  facet_wrap(~address)
+```
+
+Lastly, we use faceting to obtain scatter plots relating G3 with to age and absences, at each combination of sex and address. 
+
+First, age...
+
+```{r}
+G3_age_scatterplot_combo <- ggplot(math_data |> drop_na(age, G3, sex), 
+                             aes(x = age, y = G3, color = sex))
+G3_age_scatterplot_combo + geom_point() + 
+  geom_jitter(width = 0.25, alpha = 0.5) + 
+  facet_grid(sex~address)
+```
+
+Next, absences...
+
+```{r}
+G3_absences_scatterplot_combo <- ggplot(math_data |> drop_na(absences, G3, sex), 
+                             aes(x = absences, y = G3, color = sex))
+G3_absences_scatterplot_combo + geom_point() +
+  geom_jitter(width = 0.25, alpha = 0.5) +
+  facet_grid(sex~address)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
